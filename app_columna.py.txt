@@ -1,0 +1,166 @@
+import streamlit as st
+import io
+from docx import Document
+import datetime
+
+# --- FUNCIÓN PARA GENERAR EL WORD ---
+def generar_reporte_word(nombre, sintoma, eva_a, eva_r, roussouly, inestabilidad, tlics_score, notas_libres, conducta_final):
+    doc = Document()
+    doc.add_heading('Hospital Central Universitario Antonio María Pineda', level=1)
+    doc.add_paragraph('Servicio de Neurocirugía | Evaluación Raquimedular')
+    doc.add_paragraph(f"Fecha: {datetime.datetime.now().strftime('%d/%m/%Y')}")
+    doc.add_paragraph("Médico Tratante: Dra. María Emilia Corona")
+    
+    doc.add_heading('1. Datos Clínicos', level=2)
+    doc.add_paragraph(f"Paciente: {nombre}")
+    doc.add_paragraph(f"Motivo de Consulta: {sintoma}")
+    doc.add_paragraph(f"EVA: Axial {eva_a}/10 | Radicular {eva_r}/10")
+    
+    if notas_libres:
+        doc.add_heading('2. Evolución / Notas Adicionales', level=2)
+        doc.add_paragraph(notas_libres)
+        
+    doc.add_heading('3. Hallazgos Radiológicos y Biomecánicos', level=2)
+    doc.add_paragraph(f"Morfotipo y Balance (Roussouly): {roussouly}")
+    doc.add_paragraph(f"Criterios de Inestabilidad: {inestabilidad}")
+    if tlics_score > 0:
+        doc.add_paragraph(f"Puntaje TLICS (Trauma): {tlics_score} puntos")
+        
+    doc.add_heading('4. Conducta Sugerida (Motor Quirúrgico)', level=2)
+    doc.add_paragraph(conducta_final)
+    
+    wf = io.BytesIO()
+    doc.save(wf)
+    return wf
+
+# ==========================================
+# INTERFAZ PRINCIPAL DE LA APP
+# ==========================================
+st.set_page_config(page_title="NeuroTrauma - Columna", page_icon="⚕️", layout="wide")
+st.title("⚕️ NeuroTrauma: Decisiones en Columna")
+
+nombre_paciente = st.text_input("Nombre del Paciente:", "Paciente Ejemplo")
+
+# Pestañas con todos los módulos validados
+tab_clinica, tab_degen, tab_trauma, tab_notas = st.tabs([
+    "📋 1. Clínica (ASIA & Red Flags)", 
+    "📐 2. Balance y Degenerativa", 
+    "💥 3. Trauma (TLICS/AOSpine)",
+    "✍️ 4. Evolución Libre"
+])
+
+# --- VARIABLES GLOBALES ---
+conducta_final = ""
+tlics_total = 0
+inestabilidad_txt = "No evaluada"
+
+# ==========================================
+# 1. MÓDULO CLÍNICO
+# ==========================================
+with tab_clinica:
+    st.header("Semáforo Degenerativo y Clínica")
+    c1, c2 = st.columns(2)
+    with c1:
+        sintoma = st.selectbox("Síntoma:", ["Lumbalgia/Cervicalgia Pura", "Radiculopatía", "Claudicación Neurogénica"])
+        eva_a = st.slider("Dolor Axial (EVA)", 0, 10, 0)
+        eva_r = st.slider("Dolor Radicular (EVA)", 0, 10, 0)
+    with c2:
+        st.markdown("**Freno de Seguridad Clínico**")
+        cauda_equina = st.checkbox("🚩 RED FLAG: Síndrome Cauda Equina / Déficit Progresivo")
+        fallo_medico = st.checkbox("🟨 YELLOW FLAG: Fallo de manejo conservador > 6 semanas")
+        asia_escala = st.selectbox("Escala ASIA (Trauma/Mielopatía):", ["ASIA E (Normal)", "ASIA D", "ASIA C", "ASIA B", "ASIA A (Completa)"])
+
+# ==========================================
+# 2. MÓDULO DEGENERATIVO Y BALANCE (Core)
+# ==========================================
+with tab_degen:
+    st.header("Balance Sagital y Criterios de Inestabilidad")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Parámetros Espinopélvicos")
+        pi = st.number_input("Incidencia Pélvica (PI) °", value=50)
+        ll = st.number_input("Lordosis Lumbar (LL) °", value=40)
+        ss = st.number_input("Pendiente Sacra (SS) °", value=30)
+        mismatch = pi - ll
+        st.metric("Mismatch (PI - LL)", f"{mismatch}°")
+        
+        if ss < 35: roussouly = "Tipo 1 o 2 (Espalda Plana / Cifosis Larga)"
+        elif 35 <= ss <= 45: roussouly = "Tipo 3 (Morfotipo Armónico)"
+        else: roussouly = "Tipo 4 (Hiperlordosis)"
+        st.success(f"**Roussouly:** {roussouly}")
+        
+    with col2:
+        st.subheader("Inestabilidad (White & Panjabi)")
+        traslacion = st.number_input("Traslación en Rx Dinámicas (mm)", value=0.0, step=0.5)
+        angulacion = st.number_input("Angulación en Rx Dinámicas (°)", value=0)
+        
+        if traslacion > 3.5 or angulacion > 10:
+            inestabilidad_txt = "Inestabilidad Franca detectada (Candidato a Artrodesis)"
+            st.error(inestabilidad_txt)
+        else:
+            inestabilidad_txt = "Columna Estable"
+            st.info(inestabilidad_txt)
+
+# ==========================================
+# 3. MÓDULO DE TRAUMA (TLICS & AOSpine)
+# ==========================================
+with tab_trauma:
+    st.header("Clasificación de Fracturas y TLICS")
+    t1, t2, t3 = st.columns(3)
+    with t1:
+        morfologia = st.radio("Morfología:", ["Compresión (1 pt)", "Estallido (2 pts)", "Traslación/Rotación (3 pts)", "Distracción (4 pts)"])
+    with t2:
+        plc = st.radio("Complejo Ligamentario Posterior (PLC):", ["Intacto (0 pts)", "Sospecha/Indeterminado (2 pts)", "Roto (3 pts)"])
+    with t3:
+        neuro = st.radio("Neurológico:", ["Intacto (0 pts)", "Raíz (2 pts)", "Incompleta (3 pts)", "Completa (2 pts)", "Cauda Equina (3 pts)"])
+    
+    # Cálculo simple de TLICS extrayendo los números del texto
+    val_morf = int(morfologia.split("(")[1][0])
+    val_plc = int(plc.split("(")[1][0])
+    val_neuro = int(neuro.split("(")[1][0])
+    tlics_total = val_morf + val_plc + val_neuro
+    
+    st.metric("Puntuación TLICS Total", f"{tlics_total} puntos")
+
+# ==========================================
+# 4. EVOLUCIÓN LIBRE
+# ==========================================
+with tab_notas:
+    st.header("Notas Clínicas Adicionales")
+    notas_libres = st.text_area("Escriba aquí cualquier antecedente, hallazgo al examen físico o detalle que no esté contemplado en las clasificaciones:", height=150)
+
+# ==========================================
+# MOTOR DE DECISIONES Y EXPORTACIÓN
+# ==========================================
+st.divider()
+if st.button("🧠 Ejecutar Algoritmo y Generar Dictamen", type="primary", use_container_width=True):
+    
+    # Lógica combinada (Cruza clínica con radiología)
+    if cauda_equina:
+        conducta_final = "🚨 CIRUGÍA DE URGENCIA. Síndrome de Cauda Equina. Descompresión inmediata."
+    elif tlics_total >= 5:
+        conducta_final = f"💥 INDICACIÓN QUIRÚRGICA POR TRAUMA (TLICS {tlics_total}). Planificar fijación posterior. Evaluar abordaje según compromiso de columna anterior (Load Sharing)."
+    elif tlics_total == 4:
+        conducta_final = "⚠️ TRAUMA EN ZONA GRIS (TLICS 4). Decisión quirúrgica vs conservadora depende de modificadores clínicos."
+    elif traslacion > 3.5 or angulacion > 10:
+        conducta_final = f"🔧 ARTRODESIS + DESCOMPRESIÓN. Inestabilidad biomecánica demostrada por criterios de White & Panjabi."
+    elif mismatch > 10 and fallo_medico:
+        conducta_final = f"⚖️ ARTRODESIS CON CORRECCIÓN SAGITAL. Mismatch severo ({mismatch}°). Objetivo quirúrgico: Restaurar lordosis acorde al morfotipo {roussouly} para prevenir GAP Score alto y PJK."
+    elif sintoma == "Radiculopatía" and fallo_medico:
+        conducta_final = "🟢 DESCOMPRESIÓN SIMPLE. Balance sagital conservado, radiculopatía pura refractaria a tratamiento."
+    else:
+        conducta_final = "✅ MANEJO CONSERVADOR / FISIOTERAPIA. No hay criterios absolutos de inestabilidad, trauma quirúrgico ni déficit progresivo."
+
+    st.subheader("Dictamen Neuroquirúrgico")
+    st.info(conducta_final)
+    
+    # Generar Documento
+    wf = generar_reporte_word(nombre_paciente, sintoma, eva_a, eva_r, roussouly, inestabilidad_txt, tlics_total, notas_libres, conducta_final)
+    
+    st.download_button(
+        label="⬇️ EXPORTAR HOJA CLÍNICA (WORD)", 
+        data=wf.getvalue(), 
+        file_name=f"Evolucion_Columna_{nombre_paciente}.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
